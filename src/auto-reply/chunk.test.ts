@@ -6,7 +6,7 @@ import {
   buildInlineClose,
   buildInlineReopen,
 } from "../markdown/inline-formatting.js";
-import { parseTableSpans } from "../markdown/tables.js";
+import { parseTableSpans } from "../markdown/table-spans.js";
 import { hasBalancedFences } from "../test-utils/chunk-test-helpers.js";
 import {
   chunkByNewline,

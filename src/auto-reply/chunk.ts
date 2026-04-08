@@ -15,7 +15,7 @@ import {
   buildInlineReopen,
   scanUnmatchedInlineMarkers,
 } from "../markdown/inline-formatting.js";
-import { findTableSpanAt, isSafeTableBreak, parseTableSpans } from "../markdown/tables.js";
+import { findTableSpanAt, isSafeTableBreak, parseTableSpans } from "../markdown/table-spans.js";
 import { resolveChannelStreamingChunkMode } from "../plugin-sdk/channel-streaming.js";
 import { resolveAccountEntry } from "../routing/account-lookup.js";
 import { normalizeAccountId } from "../routing/session-key.js";

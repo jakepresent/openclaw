@@ -398,6 +398,10 @@ export async function processDiscordMessage(
   const deliverChannelId = deliverTarget.startsWith("channel:")
     ? deliverTarget.slice("channel:".length)
     : messageChannelId;
+  // Forward declaration so the draft preview controller can wait for outbound
+  // block replies to drain before emitting standalone tool-progress messages.
+  // Populated immediately after createReplyDispatcherWithTyping below.
+  let dispatcherWaitForIdle: (() => Promise<void>) | undefined;
   const draftPreview = createDiscordDraftPreviewController({
     cfg,
     discordConfig,
@@ -411,6 +415,7 @@ export async function processDiscordMessage(
     maxLinesPerMessage,
     chunkMode,
     log: logVerbose,
+    waitForOutboundIdle: () => dispatcherWaitForIdle?.() ?? Promise.resolve(),
   });
   let finalReplyStartNotified = false;
   const notifyFinalReplyStart = () => {
@@ -582,6 +587,7 @@ export async function processDiscordMessage(
         await statusReactions.setThinking();
       },
     });
+  dispatcherWaitForIdle = () => dispatcher.waitForIdle();
 
   const resolvedBlockStreamingEnabled = resolveChannelStreamingBlockEnabled(discordConfig);
   let dispatchResult: Awaited<ReturnType<typeof dispatchInboundMessage>> | null = null;
@@ -681,7 +687,11 @@ export async function processDiscordMessage(
                       },
                       payload.detailMode ? { detailMode: payload.detailMode } : undefined,
                     ),
-                    { toolName: payload.name },
+                    {
+                      toolName: payload.name,
+                      eventKind: "tool",
+                      toolPhase: payload.phase,
+                    },
                   );
                 },
                 onItemEvent: async (payload) => {
@@ -741,6 +751,7 @@ export async function processDiscordMessage(
                       status: payload.status,
                       exitCode: payload.exitCode,
                     }),
+                    { eventKind: "command-output" },
                   );
                 },
                 onPatchSummary: async (payload) => {
@@ -758,6 +769,7 @@ export async function processDiscordMessage(
                       deleted: payload.deleted,
                       summary: payload.summary,
                     }),
+                    { eventKind: "patch" },
                   );
                 },
                 onCompactionStart: async () => {

@@ -17,8 +17,12 @@ import {
 import { chunkDiscordTextWithMode } from "../chunk.js";
 import { resolveDiscordDraftStreamingChunking } from "../draft-chunking.js";
 import { createDiscordDraftStream } from "../draft-stream.js";
+import { createChannelMessage } from "../internal/api.messages.js";
 import type { RequestClient } from "../internal/discord.js";
 import { resolveDiscordPreviewStreamMode } from "../preview-streaming.js";
+
+const DISCORD_TOOL_PROGRESS_ALLOWED_MENTIONS = { parse: [] };
+const DISCORD_TOOL_PROGRESS_MAX_CHARS = 2000;
 
 type DraftReplyReference = {
   peek: () => string | undefined;
@@ -39,6 +43,10 @@ export function createDiscordDraftPreviewController(params: {
   maxLinesPerMessage: number | undefined;
   chunkMode: Parameters<typeof chunkDiscordTextWithMode>[1]["chunkMode"];
   log: (message: string) => void;
+  /** Optional gate that resolves when prior outbound block replies have drained
+   * to the network. Used by the standalone tool-progress path so tool messages
+   * cannot land in Discord ahead of the assistant text that preceded them. */
+  waitForOutboundIdle?: () => Promise<void>;
 }) {
   const discordStreamMode = resolveDiscordPreviewStreamMode(params.discordConfig);
   const draftMaxChars = Math.min(params.textLimit, 2000);
@@ -74,6 +82,16 @@ export function createDiscordDraftPreviewController(params: {
   let finalDeliveryHandled = false;
   const previewToolProgressEnabled =
     Boolean(draftStream) && resolveChannelStreamingPreviewToolProgress(params.discordConfig);
+  // When streaming.mode = "off", emit each tool-progress line as a standalone
+  // Discord message (de-duplicated against the previous line). Leaves the
+  // runtime's own default tool-progress path intact - we'll let user-visible
+  // duplication tell us if we need to also suppress it.
+  const standaloneToolProgressEnabled =
+    !params.sourceRepliesAreToolOnly &&
+    discordStreamMode === "off" &&
+    !accountBlockStreamingEnabled &&
+    resolveChannelStreamingPreviewToolProgress(params.discordConfig);
+  let lastStandaloneToolProgressLine: string | undefined;
   const suppressDefaultToolProgressMessages =
     Boolean(draftStream) &&
     resolveChannelStreamingSuppressDefaultToolProgressMessages(params.discordConfig, {
@@ -156,10 +174,14 @@ export function createDiscordDraftPreviewController(params: {
       }
       await progressDraftGate.startNow();
     },
-    async pushToolProgress(line?: string, options?: { toolName?: string }) {
-      if (!draftStream) {
-        return;
-      }
+    async pushToolProgress(
+      line?: string,
+      options?: {
+        toolName?: string;
+        eventKind?: "tool" | "item" | "plan" | "approval" | "command-output" | "patch";
+        toolPhase?: string;
+      },
+    ) {
       if (
         options?.toolName !== undefined &&
         !isChannelProgressDraftWorkToolName(options.toolName)
@@ -168,6 +190,47 @@ export function createDiscordDraftPreviewController(params: {
       }
       const normalized = line?.replace(/\s+/g, " ").trim();
       if (!normalized) {
+        return;
+      }
+      if (!draftStream) {
+        if (!standaloneToolProgressEnabled) {
+          return;
+        }
+        // Only emit tool-start lines as standalone messages. Skip
+        // command-output/patch (Jake doesn't want "completed" lines) and
+        // item/plan/approval (which fire alongside tool-start and would
+        // produce duplicate "🛠️ Exec" lines).
+        const eventKind = options?.eventKind;
+        if (eventKind !== "tool") {
+          return;
+        }
+        if (options?.toolPhase && options.toolPhase !== "start") {
+          return;
+        }
+        if (lastStandaloneToolProgressLine === normalized) {
+          return;
+        }
+        lastStandaloneToolProgressLine = normalized;
+        // Wait for in-flight block replies to drain before sending the tool
+        // message so it doesn't land before the preceding assistant text.
+        if (params.waitForOutboundIdle) {
+          try {
+            await params.waitForOutboundIdle();
+          } catch (err) {
+            params.log(`discord: waitForOutboundIdle before tool progress failed: ${String(err)}`);
+          }
+        }
+        const trimmed = normalized.slice(0, DISCORD_TOOL_PROGRESS_MAX_CHARS);
+        try {
+          await createChannelMessage(params.deliveryRest, params.deliverChannelId, {
+            body: {
+              content: trimmed,
+              allowed_mentions: DISCORD_TOOL_PROGRESS_ALLOWED_MENTIONS,
+            },
+          });
+        } catch (err) {
+          params.log(`discord: standalone tool progress send failed: ${String(err)}`);
+        }
         return;
       }
       if (discordStreamMode !== "progress") {

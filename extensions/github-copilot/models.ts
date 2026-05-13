@@ -6,6 +6,44 @@ import { normalizeModelCompat } from "openclaw/plugin-sdk/provider-model-shared"
 import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/text-runtime";
 
 export const PROVIDER_ID = "github-copilot";
+
+// Mirror of the COPILOT_XHIGH_MODEL_IDS list maintained in `./index.ts` and
+// `./provider-policy-api.ts`. The synthetic Copilot model objects produced here
+// must carry `thinkingLevelMap.xhigh` so pi-ai's `getSupportedThinkingLevels`
+// recognises xhigh as a real level and stops clamping `/thinking xhigh` down to
+// `high` at session start. Keep this list in sync with the two other call
+// sites; the duplication is intentional so each module stays lightweight.
+const COPILOT_XHIGH_MODEL_IDS = [
+  "gpt-5.4",
+  "gpt-5.3-codex",
+  "gpt-5.2",
+  "gpt-5.2-codex",
+  "claude-opus-4.7-1m-internal",
+] as const;
+
+function supportsXHighThinking(modelId: string): boolean {
+  const normalized = normalizeOptionalLowercaseString(modelId) ?? "";
+  return (COPILOT_XHIGH_MODEL_IDS as readonly string[]).includes(normalized);
+}
+
+/**
+ * Map pi-ai thinking levels to the provider's `reasoning_effort` value for a
+ * given Copilot model. Without this on the synthetic model object, pi-ai's
+ * `getSupportedThinkingLevels` filters `xhigh` out (its rule for the xhigh
+ * level is "include iff thinkingLevelMap.xhigh !== undefined") and pi-ai's
+ * `clampThinkingLevel` then downgrades a requested `xhigh` to `high` at
+ * `createAgentSession` time. The clamped value persists into both the agent
+ * runtime state AND the session JSONL `thinking_level_change` entry, so the
+ * actual API request goes out with `reasoning_effort="high"` even though the
+ * user (and the gateway log line for `embedded run start`) says xhigh.
+ */
+function buildCopilotThinkingLevelMap(
+  modelId: string,
+):
+  | Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh", string | null>>
+  | undefined {
+  return supportsXHighThinking(modelId) ? { xhigh: "xhigh" } : undefined;
+}
 const CODEX_FORWARD_COMPAT_TARGET_IDS = new Set(["gpt-5.4", "gpt-5.3-codex"]);
 // gpt-5.3-codex is only a useful template when gpt-5.4 is the target; it is
 // always a registry miss (and therefore skipped) when it is the target itself.
@@ -122,10 +160,17 @@ export function resolveCopilotForwardCompatModel(
       if (!template) {
         continue;
       }
+      const xhighMap = buildCopilotThinkingLevelMap(trimmedModelId);
+      const templateMap = (
+        template as unknown as { thinkingLevelMap?: Record<string, string | null> }
+      ).thinkingLevelMap;
+      const mergedMap =
+        xhighMap || templateMap ? { ...(templateMap ?? {}), ...(xhighMap ?? {}) } : undefined;
       return normalizeModelCompat({
         ...template,
         id: trimmedModelId,
         name: trimmedModelId,
+        ...(mergedMap ? { thinkingLevelMap: mergedMap } : {}),
       } as ProviderRuntimeModel);
     }
     // Template not found — fall through to synthetic catch-all below.
@@ -139,12 +184,14 @@ export function resolveCopilotForwardCompatModel(
   const known = resolveCopilotKnownCapabilities(trimmedModelId);
   const reasoning =
     known?.reasoning ?? (/^o[13](\b|$)/.test(lowerModelId) || isCopilotCodexModelId(lowerModelId));
+  const thinkingLevelMap = buildCopilotThinkingLevelMap(trimmedModelId);
   return normalizeModelCompat({
     id: trimmedModelId,
     name: trimmedModelId,
     provider: PROVIDER_ID,
     api: resolveCopilotTransportApi(trimmedModelId),
     reasoning,
+    ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     // Optimistic: most Copilot models support images, and the API rejects
     // image payloads for text-only models rather than failing silently.
     input: ["text", "image"],

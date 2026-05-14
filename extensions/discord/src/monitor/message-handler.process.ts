@@ -666,6 +666,8 @@ export async function processDiscordMessage(
                 onModelSelected,
                 suppressDefaultToolProgressMessages:
                   draftPreview.suppressDefaultToolProgressMessages ? true : undefined,
+                forceSuppressDefaultToolProgressMessages:
+                  draftPreview.forceSuppressDefaultToolProgressMessages ? true : undefined,
                 onReasoningStream: async (payload) => {
                   await statusReactions.setThinking();
                   await draftPreview.pushReasoningProgress(payload?.text);

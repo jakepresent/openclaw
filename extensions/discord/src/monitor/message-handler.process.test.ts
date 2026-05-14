@@ -135,6 +135,7 @@ type DispatchInboundParams = {
     sourceReplyDeliveryMode?: "automatic" | "message_tool_only";
     disableBlockStreaming?: boolean;
     suppressDefaultToolProgressMessages?: boolean;
+    forceSuppressDefaultToolProgressMessages?: boolean;
     onCompactionStart?: () => Promise<void> | void;
     onCompactionEnd?: () => Promise<void> | void;
     onPartialReply?: (payload: { text?: string }) => Promise<void> | void;
@@ -1743,6 +1744,7 @@ describe("processDiscordMessage draft streaming", () => {
     await runProcessDiscordMessage(ctx);
 
     expect(getLastDispatchReplyOptions()?.suppressDefaultToolProgressMessages).toBe(true);
+    expect(getLastDispatchReplyOptions()?.forceSuppressDefaultToolProgressMessages).toBe(true);
     expect(createDiscordDraftStream).not.toHaveBeenCalled();
     expect(discordRestMocks.post).toHaveBeenCalledTimes(1);
     expect(discordRestMocks.post.mock.calls[0]?.[1]).toMatchObject({

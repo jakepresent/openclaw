@@ -14,6 +14,7 @@ export const PROVIDER_ID = "github-copilot";
 // `high` at session start. Keep this list in sync with the two other call
 // sites; the duplication is intentional so each module stays lightweight.
 const COPILOT_XHIGH_MODEL_IDS = [
+  "gpt-5.5",
   "gpt-5.4",
   "gpt-5.3-codex",
   "gpt-5.2",

@@ -71,6 +71,9 @@ const discordTargetMocks = vi.hoisted(() => ({
     channelId: target === "user:u1" ? "dm-u1" : target,
   })),
 }));
+const discordRestMocks = vi.hoisted(() => ({
+  post: vi.fn(async () => ({ id: "discord-post-1" })),
+}));
 
 vi.mock("../send.shared.js", () => ({
   resolveDiscordTargetChannelId: (target: string, opts: unknown) =>
@@ -170,7 +173,7 @@ const createDiscordRestClientSpy = vi.hoisted(() =>
     }
   >(() => ({
     token: "token",
-    rest: {},
+    rest: { post: discordRestMocks.post },
     account: { accountId: "default", config: {} },
   })),
 );
@@ -335,6 +338,7 @@ beforeEach(() => {
   sendMocks.reactMessageDiscord.mockClear();
   sendMocks.removeReactionDiscord.mockClear();
   discordTargetMocks.resolveDiscordTargetChannelId.mockClear();
+  discordRestMocks.post.mockClear();
   editMessageDiscord.mockClear();
   deliverDiscordReply.mockClear();
   createDiscordDraftStream.mockClear();
@@ -1708,6 +1712,45 @@ describe("processDiscordMessage draft streaming", () => {
 
     expect(draftStream.update).toHaveBeenCalledWith("Shelling\n🧩 First\n🧩 Second");
     expect(draftStream.forceNewMessage).not.toHaveBeenCalled();
+  });
+
+  it("suppresses default tool summaries when standalone Discord tool progress is enabled", async () => {
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.replyOptions?.onToolStart?.({
+        name: "memory_search",
+        phase: "start",
+        args: { query: "local patch" },
+      });
+      await params?.replyOptions?.onItemEvent?.({
+        kind: "tool",
+        name: "memory_search",
+        progressText: "Memory Search: local patch",
+      });
+      return createNoQueuedDispatchResult();
+    });
+
+    const ctx = await createAutomaticSourceDeliveryContext({
+      discordConfig: {
+        streaming: {
+          mode: "off",
+          preview: {
+            toolProgress: true,
+          },
+        },
+      },
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchReplyOptions()?.suppressDefaultToolProgressMessages).toBe(true);
+    expect(createDiscordDraftStream).not.toHaveBeenCalled();
+    expect(discordRestMocks.post).toHaveBeenCalledTimes(1);
+    expect(discordRestMocks.post.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        content: "🧠 Memory Search: local patch",
+        allowed_mentions: { parse: [] },
+      },
+    });
   });
 
   it("suppresses standalone Discord tool progress when partial preview lines are disabled", async () => {

@@ -83,9 +83,7 @@ export function createDiscordDraftPreviewController(params: {
   const previewToolProgressEnabled =
     Boolean(draftStream) && resolveChannelStreamingPreviewToolProgress(params.discordConfig);
   // When streaming.mode = "off", emit each tool-progress line as a standalone
-  // Discord message (de-duplicated against the previous line). Leaves the
-  // runtime's own default tool-progress path intact - we'll let user-visible
-  // duplication tell us if we need to also suppress it.
+  // Discord message (de-duplicated against the previous line).
   const standaloneToolProgressEnabled =
     !params.sourceRepliesAreToolOnly &&
     discordStreamMode === "off" &&
@@ -93,11 +91,12 @@ export function createDiscordDraftPreviewController(params: {
     resolveChannelStreamingPreviewToolProgress(params.discordConfig);
   let lastStandaloneToolProgressLine: string | undefined;
   const suppressDefaultToolProgressMessages =
-    Boolean(draftStream) &&
-    resolveChannelStreamingSuppressDefaultToolProgressMessages(params.discordConfig, {
-      draftStreamActive: true,
-      previewToolProgressEnabled,
-    });
+    standaloneToolProgressEnabled ||
+    (Boolean(draftStream) &&
+      resolveChannelStreamingSuppressDefaultToolProgressMessages(params.discordConfig, {
+        draftStreamActive: true,
+        previewToolProgressEnabled,
+      }));
   let previewToolProgressSuppressed = false;
   let previewToolProgressLines: string[] = [];
   let reasoningProgressRawText = "";

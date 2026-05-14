@@ -291,14 +291,17 @@ describe("resolveCopilotForwardCompatModel", () => {
     expect(result.thinkingLevelMap).toBeUndefined();
   });
 
-  it("sets thinkingLevelMap.xhigh for synthetic gpt-5.4 model", () => {
-    // gpt-5.4 is in COPILOT_XHIGH_MODEL_IDS. When the codex template isn't
-    // registered, the synthetic catch-all still needs the xhigh map.
-    const ctx = createMockCtx("gpt-5.4");
-    const result = requireResolvedModel(ctx) as unknown as Record<string, unknown>;
-    expect(result.id).toBe("gpt-5.4");
-    expect(result.thinkingLevelMap).toEqual({ xhigh: "xhigh" });
-  });
+  it.each(["gpt-5.5", "gpt-5.4"])(
+    "sets thinkingLevelMap.xhigh for synthetic %s model",
+    (modelId) => {
+      // These models are in COPILOT_XHIGH_MODEL_IDS. When the codex template
+      // isn't registered, the synthetic catch-all still needs the xhigh map.
+      const ctx = createMockCtx(modelId);
+      const result = requireResolvedModel(ctx) as unknown as Record<string, unknown>;
+      expect(result.id).toBe(modelId);
+      expect(result.thinkingLevelMap).toEqual({ xhigh: "xhigh" });
+    },
+  );
 
   it("preserves xhigh map when cloning gpt-5.2-codex template for gpt-5.4", () => {
     const template = {

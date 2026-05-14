@@ -1237,8 +1237,11 @@ export async function dispatchReplyFromConfig(
     });
     const suppressDefaultToolProgressMessages =
       params.replyOptions?.suppressDefaultToolProgressMessages === true;
+    const forceSuppressDefaultToolProgressMessages =
+      params.replyOptions?.forceSuppressDefaultToolProgressMessages === true;
     const shouldSuppressDefaultToolProgressMessages = () =>
-      suppressDefaultToolProgressMessages && !shouldEmitVerboseProgress();
+      suppressDefaultToolProgressMessages &&
+      (forceSuppressDefaultToolProgressMessages || !shouldEmitVerboseProgress());
     const onToolResultFromReplyOptions = params.replyOptions?.onToolResult;
     const onPlanUpdateFromReplyOptions = params.replyOptions?.onPlanUpdate;
     const onApprovalEventFromReplyOptions = params.replyOptions?.onApprovalEvent;

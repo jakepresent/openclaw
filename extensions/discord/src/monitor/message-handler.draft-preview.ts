@@ -160,6 +160,9 @@ export function createDiscordDraftPreviewController(params: {
     get finalizedViaPreviewMessage() {
       return finalizedViaPreviewMessage;
     },
+    get forceSuppressDefaultToolProgressMessages() {
+      return standaloneToolProgressEnabled;
+    },
     markFinalDeliveryHandled() {
       finalDeliveryHandled = true;
     },
